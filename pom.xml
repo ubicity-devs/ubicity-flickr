@@ -34,9 +34,25 @@
       <scope>test</scope>
     </dependency>
     <dependency>
+      <groupId>at.ac.ait</groupId>
+      <artifactId>ubicity-core</artifactId>
+      <version>0.2.1-SNAPSHOT</version>
+      <exclusions>
+        <exclusion>
+          <artifactId>ubicity-commons</artifactId>
+          <groupId>at.ac.ait.ubicity</groupId>
+        </exclusion>
+      </exclusions>
+    </dependency>
+    <dependency>
       <groupId>${project.groupId}</groupId>
-      <artifactId>ubicity-commons</artifactId>
+      <artifactId>commons</artifactId>
       <version>${project.version}</version>
+    </dependency>
+    <dependency>
+      <groupId>com.flickr4java</groupId>
+      <artifactId>flickr</artifactId>
+      <version>2.6-SNAPSHOT</version>
     </dependency>
   </dependencies>
 </project>
