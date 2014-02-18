@@ -19,7 +19,7 @@ package at.ac.ait.ubicity.ubicity.flickrplugin.impl;
 
 import at.ac.ait.ubicity.commons.AbstractCore;
 
-import static at.ac.ait.ubicity.commons.AbstractCore.server;
+
 import at.ac.ait.ubicity.commons.PluginContext;
 import at.ac.ait.ubicity.commons.protocol.Answer;
 import at.ac.ait.ubicity.commons.protocol.Command;
@@ -37,12 +37,17 @@ import com.flickr4java.flickr.photos.PhotoList;
 import com.flickr4java.flickr.photos.PhotosInterface;
 import com.flickr4java.flickr.photos.SearchParameters;
 
-
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequestBuilder;
 import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.bulk.BulkResponse;
@@ -52,6 +57,7 @@ import org.elasticsearch.client.transport.TransportClient;
 import org.elasticsearch.common.settings.ImmutableSettings;
 import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.transport.InetSocketTransportAddress;
+
 import org.json.JSONObject;
 
 /**
@@ -73,6 +79,9 @@ public class FotoGrabberImpl implements FotoGrabber {
     
     private TransportClient esClient;
 
+    private final String server = "localhost";
+    
+    
     private final String index  = "flickr";
     
     final static Logger logger = Logger.getLogger( FotoGrabberImpl.class.getName() );
@@ -241,7 +250,7 @@ final class TermHandler extends Thread  {
         
         //initialize SearchParameter object, which stores the search keyword(s)
         SearchParameters searchParams = new SearchParameters();
-        searchParams.setSort( SearchParameters.RELEVANCE );
+        searchParams.setSort( SearchParameters.INTERESTINGNESS_DESC );
         
         //create tag keyword array
         int termCounter = 0;
@@ -258,22 +267,28 @@ final class TermHandler extends Thread  {
         //initialize PhotosInterface object
         PhotosInterface photosInterface = flickr.getPhotosInterface();
         //execute search with given tags
-        
 
-        int __counter = 0;
         long _start, _lapse;
         _start = System.nanoTime();
-        String[] __urls = new String[ 100 ];
+        final Set< URL > __urls = new HashSet();
         
         try {
-            PhotoList<Photo> photoList = photosInterface.search( searchParams, 100 , 1 );
+            PhotoList<Photo> photoList = photosInterface.search( searchParams, 20 , 1 );
             _lapse = ( System.nanoTime() - _start  ) / 1000;
             System.out.println( "[FLICKR] * * * * *  searched flickr, got " + photoList.size() + " results in " + _lapse + " microseconds * * * * *  "  );
+            photoList.stream().parallel().forEach((p) -> {
+                try {
+                    URL __url = new URL( p.getLargeUrl() );
+                    __urls.add( __url );
 
-            for( Photo p: photoList )   {
-                __urls[ __counter ] = p.getLargeUrl();
-                __counter++;
-            }
+                }
+                catch( MalformedURLException _badURL )  {
+                    System.out.println( "[FLICKR] * * * bad URL: " + _badURL.toString() );
+                }
+            });
+            System.out.println( "[FLICKR] ungrokked url set has size " + __urls.size() );
+            grok( __urls );
+            System.out.println( "[FLICKR] grokked url set has size " + __urls.size() );
             index( __urls );
         }
         catch( FlickrException fe ) {
@@ -314,28 +329,33 @@ final class TermHandler extends Thread  {
    
    
    
-    private void index(String[] __urls) {
+    private void index( final Set< URL > __urls) {
        
         String __type = terms.getType();
         BulkRequestBuilder bulk = esClient.prepareBulk();
-        
-        for( String __url: __urls ) {
+        __urls.stream().parallel().map((__url) -> {
             Map< String, String > __rawJSON = new HashMap();
-                    
-            __rawJSON.put( "url", __url );
-            JSONObject __o = new JSONObject( __rawJSON );
-            System.out.println( __o.toString() );
-            
+            __rawJSON.put( "url", __url.toString() );
+            return __rawJSON;
+        }).map((__rawJSON) -> new JSONObject( __rawJSON )).map((__o) -> {
             String __id = new StringBuilder().append( System.currentTimeMillis() ).append( System.nanoTime() ).toString();
             IndexRequest __req = new IndexRequest( "flickr", __type, __id );
             __req.source( __o.toString() );
-            
+            return __req;            
+        }).forEach((__req) -> {
             bulk.add( __req );
-        }
+        });
         BulkResponse __response = bulk.execute().actionGet();
         if( __response.hasFailures() )  {
             System.out.println(  __response.buildFailureMessage() );
         }
         return;
+    }
+
+    
+    
+    
+    private Set< URL > grok(Set<URL> __urls) {
+        return ( new ImageGrokker( __urls ) ).run();
     }
 }
