@@ -36,18 +36,14 @@
     <dependency>
       <groupId>at.ac.ait</groupId>
       <artifactId>ubicity-core</artifactId>
-      <version>0.2.1-SNAPSHOT</version>
+      <version>1.0-SNAPSHOT</version>
       <exclusions>
-        <exclusion>
-          <artifactId>ubicity-commons</artifactId>
-          <groupId>at.ac.ait.ubicity</groupId>
-        </exclusion>
       </exclusions>
     </dependency>
     <dependency>
       <groupId>${project.groupId}</groupId>
       <artifactId>commons</artifactId>
-      <version>${project.version}</version>
+      <version>0.2.1-SNAPSHOT</version>
     </dependency>
     <dependency>
       <groupId>com.flickr4java</groupId>
