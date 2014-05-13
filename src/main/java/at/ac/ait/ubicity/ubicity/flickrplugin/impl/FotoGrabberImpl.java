@@ -81,22 +81,19 @@ public class FotoGrabberImpl implements FotoGrabber {
 	final static Logger logger = Logger.getLogger(FotoGrabberImpl.class
 			.getName());
 
-	private static Configuration config;
+	public FotoGrabberImpl() {
 
-	static {
 		try {
-			config = new PropertiesConfiguration("flicker.cfg");
-
+			Configuration config = new PropertiesConfiguration(
+					FotoGrabberImpl.class.getResource("/flicker.cfg"));
 			server = config.getString("plugin.flickr.server");
 			index = config.getString("plugin.flickr.index");
+
 		} catch (ConfigurationException noConfig) {
 			logger.severe(FotoGrabberImpl.class.getName()
-					+ " :: found no config, file plugin.cfg not found or other configuration problem");
+					+ " :: found no config, file flicker.cfg not found or other configuration problem");
 		}
 
-	}
-
-	public FotoGrabberImpl() {
 		core = Core.getInstance();
 		myMedium = Medium.FLICKR;
 		core.register(this);
