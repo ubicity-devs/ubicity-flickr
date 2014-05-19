@@ -29,17 +29,14 @@ import java.util.logging.Logger;
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
-import org.elasticsearch.action.admin.indices.create.CreateIndexRequestBuilder;
 import org.elasticsearch.action.bulk.BulkRequestBuilder;
 import org.elasticsearch.action.bulk.BulkResponse;
 import org.elasticsearch.action.index.IndexRequest;
-import org.elasticsearch.client.transport.TransportClient;
-import org.elasticsearch.common.settings.ImmutableSettings;
-import org.elasticsearch.common.settings.Settings;
-import org.elasticsearch.common.transport.InetSocketTransportAddress;
 import org.json.JSONObject;
 
-import at.ac.ait.ubicity.commons.PluginContext;
+import at.ac.ait.ubicity.commons.interfaces.UbicityPlugin;
+import at.ac.ait.ubicity.commons.interfaces.UbicityPlugin.PluginConfig;
+import at.ac.ait.ubicity.commons.plugin.PluginContext;
 import at.ac.ait.ubicity.commons.protocol.Answer;
 import at.ac.ait.ubicity.commons.protocol.Command;
 import at.ac.ait.ubicity.commons.protocol.Control;
@@ -62,21 +59,15 @@ import com.flickr4java.flickr.photos.SearchParameters;
  */
 public class FotoGrabberImpl implements FotoGrabber {
 
-	private final Medium myMedium;
+	private final Medium myMedium = Medium.FLICKR;
 
 	private final Map<String, TermHandler> handlers = new ConcurrentHashMap<String, TermHandler>();
 
-	private final static String name = "Flickr plugin for ubicity";
+	private final HashMap<PluginConfig, String> pluginConfig = new HashMap<PluginConfig, String>();
 
 	private final Core core;
 
 	private PluginContext context;
-
-	private TransportClient esClient;
-
-	private static String server;
-
-	private static String index;
 
 	final static Logger logger = Logger.getLogger(FotoGrabberImpl.class
 			.getName());
@@ -86,8 +77,7 @@ public class FotoGrabberImpl implements FotoGrabber {
 		try {
 			Configuration config = new PropertiesConfiguration(
 					FotoGrabberImpl.class.getResource("/flicker.cfg"));
-			server = config.getString("plugin.flickr.server");
-			index = config.getString("plugin.flickr.index");
+			setPluginConfig(config);
 
 		} catch (ConfigurationException noConfig) {
 			logger.severe(FotoGrabberImpl.class.getName()
@@ -95,14 +85,26 @@ public class FotoGrabberImpl implements FotoGrabber {
 		}
 
 		core = Core.getInstance();
-		myMedium = Medium.FLICKR;
 		core.register(this);
-		System.out.println("[FLICKR]" + " registered with ubicity core ");
-		init();
-		System.out.println("[FLICKR]" + " initiated ");
+
+		logger.info("registered with ubicity core ");
+
 		Thread t = new Thread(this);
-		t.setName("execution context for " + name);
+		t.setName("execution context for " + getName());
 		t.start();
+	}
+
+	/**
+	 * Sets the Plugin configuration.
+	 * 
+	 * @param config
+	 */
+	private void setPluginConfig(Configuration config) {
+		pluginConfig.put(PluginConfig.PLUGIN_NAME,
+				config.getString("Flickr plugin for ubicity"));
+
+		pluginConfig.put(PluginConfig.ES_INDEX,
+				config.getString("plugin.flickr.elasticsearch.index"));
 	}
 
 	@Override
@@ -123,11 +125,12 @@ public class FotoGrabberImpl implements FotoGrabber {
 		// we have the right Medium in the command, and we have Terms: we can go
 		// down to business
 		Terms __terms = _command.getTerms();
-		TermHandler tH = new TermHandler(__terms, esClient);
+
+		TermHandler tH = new TermHandler(__terms, context.getUbicityPlugin());
 		handlers.put(__terms.getType(), tH);
 		Thread tTH = new Thread(tH);
-		tH.setPriority(Thread.MAX_PRIORITY);
-		tH.start();
+		tTH.setPriority(Thread.MAX_PRIORITY);
+		tTH.start();
 		logger.info("started TermHandler for type " + __terms.getType());
 		return Answer.ACK;
 	}
@@ -141,14 +144,9 @@ public class FotoGrabberImpl implements FotoGrabber {
 		Thread.currentThread().stop();
 	}
 
-	/**
-	 *
-	 * @return
-	 */
-
 	@Override
 	public String getName() {
-		return name;
+		return pluginConfig.get(PluginConfig.PLUGIN_NAME);
 	}
 
 	@Override
@@ -207,21 +205,9 @@ public class FotoGrabberImpl implements FotoGrabber {
 		return false;
 	}
 
-	private final void init() {
-		// instantiate an elasticsearch client
-		Settings settings = ImmutableSettings.settingsBuilder().build();
-		esClient = new TransportClient(settings)
-				.addTransportAddress(new InetSocketTransportAddress(server,
-						9300));
-		try {
-
-			CreateIndexRequestBuilder createIndexRequestBuilder = esClient
-					.admin().indices().prepareCreate(index);
-			createIndexRequestBuilder.execute().actionGet();
-		} catch (Throwable t) {
-			// do nothing, we may get an IndexAlreadyExistsException, but don't
-			// care about that, here and now
-		}
+	@Override
+	public String getConfigEntry(PluginConfig cfg) {
+		return pluginConfig.get(cfg);
 	}
 }
 
@@ -229,30 +215,40 @@ final class TermHandler extends Thread {
 
 	final Terms terms;
 
-	private final TransportClient esClient;
+	private final UbicityPlugin plugin;
 
 	boolean done = false;
 
-	TermHandler(Terms _terms, TransportClient _esClient) {
-		terms = _terms;
-		esClient = _esClient;
+	private Flickr flickrClient = null;
 
+	final static Logger logger = Logger.getLogger(TermHandler.class.getName());
+
+	TermHandler(Terms _terms, UbicityPlugin plugin) {
+		this.terms = _terms;
+		this.plugin = plugin;
+
+		try {
+			Configuration config = new PropertiesConfiguration(
+					FotoGrabberImpl.class.getResource("/flicker.cfg"));
+
+			REST rest = new REST();
+			rest.setHost(config.getString("plugin.flickr.api.server"));
+
+			flickrClient = new Flickr(
+					config.getString("plugin.flickr.api.key"),
+					config.getString("plugin.flickr.api.secret"), rest);
+			Flickr.debugStream = false;
+
+		} catch (ConfigurationException noConfig) {
+			logger.severe(FotoGrabberImpl.class.getName()
+					+ " :: found no config, file flicker.cfg not found or other configuration problem");
+		}
 	}
 
 	@Override
 	public final void run() {
-		FotoGrabberImpl.logger.info("[FLICKR] TermHander for "
-				+ terms.getType() + " :: RUN ");
-
-		String key = "88e649a011244b9204a8821f2c9e63a2";
-		String secret = "2cf8d4e7a07ff516";
-		String srvr = "www.flickr.com";
-		REST rest = new REST();
-		rest.setHost(srvr);
-
-		// initialized flickr object with key and REST
-		Flickr flickr = new Flickr(key, secret, rest);
-		Flickr.debugStream = false;
+		FotoGrabberImpl.logger.info("TermHander for " + terms.getType()
+				+ " :: RUN ");
 
 		// initialize SearchParameter object, which stores the search keyword(s)
 		SearchParameters searchParams = new SearchParameters();
@@ -270,7 +266,7 @@ final class TermHandler extends Thread {
 		searchParams.setTags(tags);
 
 		// initialize PhotosInterface object
-		PhotosInterface photosInterface = flickr.getPhotosInterface();
+		PhotosInterface photosInterface = flickrClient.getPhotosInterface();
 		// execute search with given tags
 
 		long _start, _lapse;
@@ -338,7 +334,8 @@ final class TermHandler extends Thread {
 	private void index(final Set<URL> __urls) {
 
 		String __type = terms.getType();
-		BulkRequestBuilder bulk = esClient.prepareBulk();
+		BulkRequestBuilder bulk = plugin.getContext().getESClient()
+				.getBulkRequestBuilder();
 		__urls.stream()
 				.parallel()
 				.map((__url) -> {
@@ -351,7 +348,8 @@ final class TermHandler extends Thread {
 					String __id = new StringBuilder()
 							.append(System.currentTimeMillis())
 							.append(System.nanoTime()).toString();
-					IndexRequest __req = new IndexRequest("flickr", __type,
+					IndexRequest __req = new IndexRequest(plugin
+							.getConfigEntry(PluginConfig.ES_INDEX), __type,
 							__id);
 					__req.source(__o.toString());
 					return __req;
