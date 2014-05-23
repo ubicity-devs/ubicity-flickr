@@ -22,27 +22,31 @@ import java.net.URL;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Random;
 import java.util.Set;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.logging.Logger;
+
+import net.xeoh.plugins.base.annotations.PluginImplementation;
 
 import org.apache.commons.configuration.Configuration;
 import org.apache.commons.configuration.ConfigurationException;
 import org.apache.commons.configuration.PropertiesConfiguration;
-import org.elasticsearch.action.bulk.BulkRequestBuilder;
-import org.elasticsearch.action.bulk.BulkResponse;
-import org.elasticsearch.action.index.IndexRequest;
+import org.apache.log4j.Logger;
 import org.json.JSONObject;
 
-import at.ac.ait.ubicity.commons.interfaces.UbicityPlugin;
-import at.ac.ait.ubicity.commons.interfaces.UbicityPlugin.PluginConfig;
-import at.ac.ait.ubicity.commons.plugin.PluginContext;
+import at.ac.ait.ubicity.commons.broker.events.ESMetadata;
+import at.ac.ait.ubicity.commons.broker.events.ESMetadata.Action;
+import at.ac.ait.ubicity.commons.broker.events.ESMetadata.Properties;
+import at.ac.ait.ubicity.commons.broker.events.EventEntry;
+import at.ac.ait.ubicity.commons.broker.events.Metadata;
 import at.ac.ait.ubicity.commons.protocol.Answer;
 import at.ac.ait.ubicity.commons.protocol.Command;
 import at.ac.ait.ubicity.commons.protocol.Control;
 import at.ac.ait.ubicity.commons.protocol.Medium;
 import at.ac.ait.ubicity.commons.protocol.Terms;
 import at.ac.ait.ubicity.core.Core;
+import at.ac.ait.ubicity.core.UbicityBrokerException;
 import at.ac.ait.ubicity.ubicity.flickrplugin.FotoGrabber;
 
 import com.flickr4java.flickr.Flickr;
@@ -57,22 +61,27 @@ import com.flickr4java.flickr.photos.SearchParameters;
  *
  * @author jan van oort
  */
+@PluginImplementation
 public class FotoGrabberImpl implements FotoGrabber {
 
 	private final Medium myMedium = Medium.FLICKR;
 
 	private final Map<String, TermHandler> handlers = new ConcurrentHashMap<String, TermHandler>();
 
-	private final HashMap<PluginConfig, String> pluginConfig = new HashMap<PluginConfig, String>();
-
 	private final Core core;
 
-	private PluginContext context;
+	private String name;
 
-	final static Logger logger = Logger.getLogger(FotoGrabberImpl.class
-			.getName());
+	private String esIndex;
+
+	private final int uniqueId;
+
+	volatile boolean shutdown = false;
+
+	final static Logger logger = Logger.getLogger(FotoGrabberImpl.class);
 
 	public FotoGrabberImpl() {
+		uniqueId = new Random().nextInt();
 
 		try {
 			Configuration config = new PropertiesConfiguration(
@@ -80,14 +89,11 @@ public class FotoGrabberImpl implements FotoGrabber {
 			setPluginConfig(config);
 
 		} catch (ConfigurationException noConfig) {
-			logger.severe(FotoGrabberImpl.class.getName()
-					+ " :: found no config, file flicker.cfg not found or other configuration problem");
+			logger.fatal("Configuration not found! " + noConfig.toString());
 		}
 
 		core = Core.getInstance();
 		core.register(this);
-
-		logger.info("registered with ubicity core ");
 
 		Thread t = new Thread(this);
 		t.setName("execution context for " + getName());
@@ -100,17 +106,28 @@ public class FotoGrabberImpl implements FotoGrabber {
 	 * @param config
 	 */
 	private void setPluginConfig(Configuration config) {
-		pluginConfig.put(PluginConfig.PLUGIN_NAME,
-				config.getString("Flickr plugin for ubicity"));
+		this.name = config.getString("plugin.flickr.name");
+		esIndex = config.getString("plugin.flickr.elasticsearch.index");
+	}
 
-		pluginConfig.put(PluginConfig.ES_INDEX,
-				config.getString("plugin.flickr.elasticsearch.index"));
+	@Override
+	public final int hashCode() {
+		return uniqueId;
+	}
+
+	@Override
+	public final boolean equals(Object o) {
+
+		if (FotoGrabberImpl.class.isInstance(o)) {
+			FotoGrabberImpl other = (FotoGrabberImpl) o;
+			return other.uniqueId == this.uniqueId;
+		}
+		return false;
 	}
 
 	@Override
 	public Answer execute(Command _command) {
-		System.out.println("[FLICKR] received a Command :: "
-				+ _command.toRESTString());
+		logger.info("[Received a Command :: " + _command.toRESTString());
 		// do some sanity checking upon the command
 		if (!_command.getMedia().get().contains(myMedium))
 			return Answer.FAIL;
@@ -126,7 +143,7 @@ public class FotoGrabberImpl implements FotoGrabber {
 		// down to business
 		Terms __terms = _command.getTerms();
 
-		TermHandler tH = new TermHandler(__terms, context.getUbicityPlugin());
+		TermHandler tH = new TermHandler(this, __terms);
 		handlers.put(__terms.getType(), tH);
 		Thread tTH = new Thread(tH);
 		tTH.setPriority(Thread.MAX_PRIORITY);
@@ -135,34 +152,14 @@ public class FotoGrabberImpl implements FotoGrabber {
 		return Answer.ACK;
 	}
 
-	/**
-     *
-     */
-
-	@Override
-	public void mustStop() {
-		Thread.currentThread().stop();
-	}
-
 	@Override
 	public String getName() {
-		return pluginConfig.get(PluginConfig.PLUGIN_NAME);
+		return this.name;
 	}
 
 	@Override
-	public void setContext(PluginContext _context) {
-		context = _context;
-	}
-
-	@Override
-	public PluginContext getContext() {
-		return context;
-	}
-
-	@Override
-	@SuppressWarnings({ "BroadCatchBlock", "TooBroadCatch", "SleepWhileInLoop" })
 	public void run() {
-		while (true) {
+		while (!shutdown) {
 			try {
 				Thread.sleep(10);
 				for (TermHandler t : handlers.values()) {
@@ -175,7 +172,7 @@ public class FotoGrabberImpl implements FotoGrabber {
 			} catch (InterruptedException _interrupt) {
 				Thread.interrupted();
 			} catch (Exception | Error e) {
-				logger.severe("Caught an exception while running : "
+				logger.fatal("Caught an exception while running : "
 						+ e.toString());
 			}
 		}
@@ -198,50 +195,57 @@ public class FotoGrabberImpl implements FotoGrabber {
 			return tH.doStop();
 
 		// if we land here, something has gone pretty wrong
-		Logger.getAnonymousLogger(this.getClass().getName())
-				.warning(
-						"could not determine which control to perform, or for which terms the control was meant. Here follows a representation of the Command received : "
-								+ _command.toString());
+		logger.warn("could not determine which control to perform, or for which terms the control was meant. Here follows a representation of the Command received : "
+				+ _command.toString());
 		return false;
 	}
 
+	EventEntry createEvent(String esType, String data) {
+
+		HashMap<Properties, String> props = new HashMap<ESMetadata.Properties, String>();
+		props.put(Properties.ES_INDEX, this.esIndex);
+		props.put(Properties.ES_TYPE, esType);
+		Metadata meta = new ESMetadata(Action.INDEX, 1, props);
+
+		String id = this.name + "-" + UUID.randomUUID().toString();
+		return new EventEntry(id, meta, data);
+	}
+
 	@Override
-	public String getConfigEntry(PluginConfig cfg) {
-		return pluginConfig.get(cfg);
+	public boolean shutdown() {
+		shutdown = true;
+		return true;
 	}
 }
 
 final class TermHandler extends Thread {
 
 	final Terms terms;
-
-	private final UbicityPlugin plugin;
-
 	boolean done = false;
 
 	private Flickr flickrClient = null;
+	private final Core core;
 
-	final static Logger logger = Logger.getLogger(TermHandler.class.getName());
+	private final FotoGrabberImpl grapper;
 
-	TermHandler(Terms _terms, UbicityPlugin plugin) {
+	final static Logger logger = Logger.getLogger(TermHandler.class);
+
+	TermHandler(FotoGrabberImpl grapper, Terms _terms) {
+		this.grapper = grapper;
 		this.terms = _terms;
-		this.plugin = plugin;
+		this.core = Core.getInstance();
 
 		try {
 			Configuration config = new PropertiesConfiguration(
 					FotoGrabberImpl.class.getResource("/flicker.cfg"));
 
-			REST rest = new REST();
-			rest.setHost(config.getString("plugin.flickr.api.server"));
-
 			flickrClient = new Flickr(
 					config.getString("plugin.flickr.api.key"),
-					config.getString("plugin.flickr.api.secret"), rest);
+					config.getString("plugin.flickr.api.secret"), new REST());
 			Flickr.debugStream = false;
 
 		} catch (ConfigurationException noConfig) {
-			logger.severe(FotoGrabberImpl.class.getName()
-					+ " :: found no config, file flicker.cfg not found or other configuration problem");
+			logger.fatal("Configuration not found! " + noConfig.toString());
 		}
 	}
 
@@ -269,17 +273,15 @@ final class TermHandler extends Thread {
 		PhotosInterface photosInterface = flickrClient.getPhotosInterface();
 		// execute search with given tags
 
-		long _start, _lapse;
-		_start = System.nanoTime();
+		long _start = System.currentTimeMillis();
 		final Set<URL> __urls = new HashSet();
-
 		try {
+
 			PhotoList<Photo> photoList = photosInterface.search(searchParams,
 					20, 1);
-			_lapse = (System.nanoTime() - _start) / 1000;
-			System.out.println("[FLICKR] * * * * *  searched flickr, got "
-					+ photoList.size() + " results in " + _lapse
-					+ " microseconds * * * * *  ");
+			logger.info("Fetched " + photoList.size() + " Flickr results in "
+					+ (System.currentTimeMillis() - _start) + " [ms]");
+
 			photoList
 					.stream()
 					.parallel()
@@ -290,19 +292,20 @@ final class TermHandler extends Thread {
 									__urls.add(__url);
 
 								} catch (MalformedURLException _badURL) {
-									System.out
-											.println("[FLICKR] * * * bad URL: "
-													+ _badURL.toString());
+									logger.warn("[FLICKR] * * * bad URL: "
+											+ _badURL.toString());
 								}
 							});
-			System.out.println("[FLICKR] ungrokked url set has size "
-					+ __urls.size());
+			int rawSize = __urls.size();
 			grok(__urls);
-			System.out.println("[FLICKR] grokked url set has size "
-					+ __urls.size());
+
+			logger.info("Grokker removed " + rawSize + " entries. Indexing "
+					+ __urls.size() + " entries.");
 			index(__urls);
+
 		} catch (FlickrException fe) {
 			done = true;
+			logger.error("Caught flickrException", fe);
 			throw new Error(fe);
 		}
 		done = true;
@@ -314,8 +317,7 @@ final class TermHandler extends Thread {
 			stop();
 			return true;
 		} catch (Exception | Error e) {
-			Logger.getLogger(this.getClass().getName()).warning(
-					"problem encountered while trying to stop ");
+			logger.warn("problem encountered while trying to stop ");
 			return false;
 		}
 	}
@@ -325,42 +327,26 @@ final class TermHandler extends Thread {
 			this.suspend();
 			return true;
 		} catch (Exception | Error e) {
-			Logger.getLogger(this.getClass().getName()).warning(
-					"problem encountered while trying to pause ");
+			logger.warn("problem encountered while trying to pause ");
 			return false;
 		}
 	}
 
-	private void index(final Set<URL> __urls) {
+	private void index(final Set<URL> urlList) {
 
-		String __type = terms.getType();
-		BulkRequestBuilder bulk = plugin.getContext().getESClient()
-				.getBulkRequestBuilder();
-		__urls.stream()
-				.parallel()
-				.map((__url) -> {
-					Map<String, String> __rawJSON = new HashMap();
-					__rawJSON.put("url", __url.toString());
-					return __rawJSON;
-				})
-				.map((__rawJSON) -> new JSONObject(__rawJSON))
-				.map((__o) -> {
-					String __id = new StringBuilder()
-							.append(System.currentTimeMillis())
-							.append(System.nanoTime()).toString();
-					IndexRequest __req = new IndexRequest(plugin
-							.getConfigEntry(PluginConfig.ES_INDEX), __type,
-							__id);
-					__req.source(__o.toString());
-					return __req;
-				}).forEach((__req) -> {
-					bulk.add(__req);
-				});
-		BulkResponse __response = bulk.execute().actionGet();
-		if (__response.hasFailures()) {
-			System.out.println(__response.buildFailureMessage());
+		for (URL u : urlList) {
+			Map<String, String> json = new HashMap();
+			json.put("url", u.toString());
+
+			// Publish event
+			EventEntry entry = this.grapper.createEvent(terms.getType(),
+					new JSONObject(json).toString());
+			try {
+				core.publish(entry);
+			} catch (UbicityBrokerException e) {
+				logger.error("UbicityBroker threw exc: " + e.getBrokerMessage());
+			}
 		}
-		return;
 	}
 
 	private Set<URL> grok(Set<URL> __urls) {
