@@ -23,6 +23,6 @@ import at.ac.ait.ubicity.commons.interfaces.ReverseControllableMediumPlugin;
  *
  * @author jan
  */
-public interface FotoGrabber extends ReverseControllableMediumPlugin {
+public interface FlickrStreamer extends ReverseControllableMediumPlugin {
     
 }

@@ -29,9 +29,6 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import net.xeoh.plugins.base.annotations.PluginImplementation;
 
-import org.apache.commons.configuration.Configuration;
-import org.apache.commons.configuration.ConfigurationException;
-import org.apache.commons.configuration.PropertiesConfiguration;
 import org.apache.log4j.Logger;
 import org.json.JSONObject;
 
@@ -45,9 +42,10 @@ import at.ac.ait.ubicity.commons.protocol.Command;
 import at.ac.ait.ubicity.commons.protocol.Control;
 import at.ac.ait.ubicity.commons.protocol.Medium;
 import at.ac.ait.ubicity.commons.protocol.Terms;
+import at.ac.ait.ubicity.commons.util.PropertyLoader;
 import at.ac.ait.ubicity.core.Core;
 import at.ac.ait.ubicity.core.UbicityBrokerException;
-import at.ac.ait.ubicity.ubicity.flickrplugin.FotoGrabber;
+import at.ac.ait.ubicity.ubicity.flickrplugin.FlickrStreamer;
 
 import com.flickr4java.flickr.Flickr;
 import com.flickr4java.flickr.FlickrException;
@@ -62,7 +60,7 @@ import com.flickr4java.flickr.photos.SearchParameters;
  * @author jan van oort
  */
 @PluginImplementation
-public class FotoGrabberImpl implements FotoGrabber {
+public class FlickrStreamerImpl implements FlickrStreamer {
 
 	private final Medium myMedium = Medium.FLICKR;
 
@@ -78,19 +76,14 @@ public class FotoGrabberImpl implements FotoGrabber {
 
 	volatile boolean shutdown = false;
 
-	final static Logger logger = Logger.getLogger(FotoGrabberImpl.class);
+	final static Logger logger = Logger.getLogger(FlickrStreamerImpl.class);
 
-	public FotoGrabberImpl() {
+	public FlickrStreamerImpl() {
 		uniqueId = new Random().nextInt();
 
-		try {
-			Configuration config = new PropertiesConfiguration(
-					FotoGrabberImpl.class.getResource("/flicker.cfg"));
-			setPluginConfig(config);
-
-		} catch (ConfigurationException noConfig) {
-			logger.fatal("Configuration not found! " + noConfig.toString());
-		}
+		PropertyLoader config = new PropertyLoader(
+				FlickrStreamerImpl.class.getResource("/flicker.cfg"));
+		setPluginConfig(config);
 
 		core = Core.getInstance();
 		core.register(this);
@@ -105,7 +98,7 @@ public class FotoGrabberImpl implements FotoGrabber {
 	 * 
 	 * @param config
 	 */
-	private void setPluginConfig(Configuration config) {
+	private void setPluginConfig(PropertyLoader config) {
 		this.name = config.getString("plugin.flickr.name");
 		esIndex = config.getString("plugin.flickr.elasticsearch.index");
 	}
@@ -118,8 +111,8 @@ public class FotoGrabberImpl implements FotoGrabber {
 	@Override
 	public final boolean equals(Object o) {
 
-		if (FotoGrabberImpl.class.isInstance(o)) {
-			FotoGrabberImpl other = (FotoGrabberImpl) o;
+		if (FlickrStreamerImpl.class.isInstance(o)) {
+			FlickrStreamerImpl other = (FlickrStreamerImpl) o;
 			return other.uniqueId == this.uniqueId;
 		}
 		return false;
@@ -226,32 +219,25 @@ final class TermHandler extends Thread {
 	private Flickr flickrClient = null;
 	private final Core core;
 
-	private final FotoGrabberImpl grapper;
+	private final FlickrStreamerImpl grapper;
 
 	final static Logger logger = Logger.getLogger(TermHandler.class);
 
-	TermHandler(FotoGrabberImpl grapper, Terms _terms) {
+	TermHandler(FlickrStreamerImpl grapper, Terms _terms) {
 		this.grapper = grapper;
 		this.terms = _terms;
 		this.core = Core.getInstance();
 
-		try {
-			Configuration config = new PropertiesConfiguration(
-					FotoGrabberImpl.class.getResource("/flicker.cfg"));
-
-			flickrClient = new Flickr(
-					config.getString("plugin.flickr.api.key"),
-					config.getString("plugin.flickr.api.secret"), new REST());
-			Flickr.debugStream = false;
-
-		} catch (ConfigurationException noConfig) {
-			logger.fatal("Configuration not found! " + noConfig.toString());
-		}
+		PropertyLoader config = new PropertyLoader(
+				TermHandler.class.getResource("/flicker.cfg"));
+		flickrClient = new Flickr(config.getString("plugin.flickr.api.key"),
+				config.getString("plugin.flickr.api.secret"), new REST());
+		Flickr.debugStream = false;
 	}
 
 	@Override
 	public final void run() {
-		FotoGrabberImpl.logger.info("TermHander for " + terms.getType()
+		FlickrStreamerImpl.logger.info("TermHander for " + terms.getType()
 				+ " :: RUN ");
 
 		// initialize SearchParameter object, which stores the search keyword(s)
