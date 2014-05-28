@@ -28,6 +28,8 @@ import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import net.xeoh.plugins.base.annotations.PluginImplementation;
+import net.xeoh.plugins.base.annotations.events.Init;
+import net.xeoh.plugins.base.annotations.events.Shutdown;
 
 import org.apache.log4j.Logger;
 import org.json.JSONObject;
@@ -55,10 +57,6 @@ import com.flickr4java.flickr.photos.PhotoList;
 import com.flickr4java.flickr.photos.PhotosInterface;
 import com.flickr4java.flickr.photos.SearchParameters;
 
-/**
- *
- * @author jan van oort
- */
 @PluginImplementation
 public class FlickrStreamerImpl implements FlickrStreamer {
 
@@ -66,19 +64,21 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 
 	private final Map<String, TermHandler> handlers = new ConcurrentHashMap<String, TermHandler>();
 
-	private final Core core;
+	private Core core;
 
 	private String name;
 
 	private String esIndex;
 
-	private final int uniqueId;
+	private int uniqueId;
 
 	volatile boolean shutdown = false;
 
 	final static Logger logger = Logger.getLogger(FlickrStreamerImpl.class);
 
-	public FlickrStreamerImpl() {
+	@Override
+	@Init
+	public void init() {
 		uniqueId = new Random().nextInt();
 
 		PropertyLoader config = new PropertyLoader(
@@ -205,9 +205,9 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 	}
 
 	@Override
-	public boolean shutdown() {
+	@Shutdown
+	public void shutdown() {
 		shutdown = true;
-		return true;
 	}
 }
 
