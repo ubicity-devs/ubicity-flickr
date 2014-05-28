@@ -32,7 +32,6 @@ import net.xeoh.plugins.base.annotations.events.Init;
 import net.xeoh.plugins.base.annotations.events.Shutdown;
 
 import org.apache.log4j.Logger;
-import org.json.JSONObject;
 
 import at.ac.ait.ubicity.commons.broker.events.ESMetadata;
 import at.ac.ait.ubicity.commons.broker.events.ESMetadata.Action;
@@ -56,6 +55,7 @@ import com.flickr4java.flickr.photos.Photo;
 import com.flickr4java.flickr.photos.PhotoList;
 import com.flickr4java.flickr.photos.PhotosInterface;
 import com.flickr4java.flickr.photos.SearchParameters;
+import com.google.gson.Gson;
 
 @PluginImplementation
 public class FlickrStreamerImpl implements FlickrStreamer {
@@ -87,10 +87,6 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 
 		core = Core.getInstance();
 		core.register(this);
-
-		Thread t = new Thread(this);
-		t.setName("execution context for " + getName());
-		t.start();
 	}
 
 	/**
@@ -150,7 +146,7 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 		return this.name;
 	}
 
-	@Override
+	@net.xeoh.plugins.base.annotations.Thread
 	public void run() {
 		while (!shutdown) {
 			try {
@@ -220,6 +216,8 @@ final class TermHandler extends Thread {
 	private final Core core;
 
 	private final FlickrStreamerImpl grapper;
+
+	private static Gson gson = new Gson();
 
 	final static Logger logger = Logger.getLogger(TermHandler.class);
 
@@ -324,9 +322,8 @@ final class TermHandler extends Thread {
 			Map<String, String> json = new HashMap();
 			json.put("url", u.toString());
 
-			// Publish event
 			EventEntry entry = this.grapper.createEvent(terms.getType(),
-					new JSONObject(json).toString());
+					gson.toJson(json));
 			try {
 				core.publish(entry);
 			} catch (UbicityBrokerException e) {
