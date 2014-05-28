@@ -137,7 +137,6 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 		Thread tTH = new Thread(tH);
 		tTH.setPriority(Thread.MAX_PRIORITY);
 		tTH.start();
-		logger.info("started TermHandler for type " + __terms.getType());
 		return Answer.ACK;
 	}
 
@@ -235,9 +234,6 @@ final class TermHandler extends Thread {
 
 	@Override
 	public final void run() {
-		FlickrStreamerImpl.logger.info("TermHander for " + terms.getType()
-				+ " :: RUN ");
-
 		// initialize SearchParameter object, which stores the search keyword(s)
 		SearchParameters searchParams = new SearchParameters();
 		searchParams.setSort(SearchParameters.INTERESTINGNESS_DESC);
@@ -264,7 +260,8 @@ final class TermHandler extends Thread {
 			PhotoList<Photo> photoList = photosInterface.search(searchParams,
 					20, 1);
 			logger.info("Fetched " + photoList.size() + " Flickr results in "
-					+ (System.currentTimeMillis() - _start) + " [ms]");
+					+ (System.currentTimeMillis() - _start) + " [ms] for "
+					+ terms.getType());
 
 			photoList
 					.stream()
@@ -280,12 +277,7 @@ final class TermHandler extends Thread {
 											+ _badURL.toString());
 								}
 							});
-			int rawSize = __urls.size();
-			grok(__urls);
-
-			logger.info("Grokker removed " + rawSize + " entries. Indexing "
-					+ __urls.size() + " entries.");
-			index(__urls);
+			index(grok(__urls));
 
 		} catch (FlickrException fe) {
 			done = true;
