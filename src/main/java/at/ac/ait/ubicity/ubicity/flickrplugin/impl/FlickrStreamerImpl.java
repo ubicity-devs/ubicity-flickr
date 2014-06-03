@@ -30,22 +30,23 @@ import java.util.concurrent.ConcurrentHashMap;
 import net.xeoh.plugins.base.annotations.PluginImplementation;
 import net.xeoh.plugins.base.annotations.events.Init;
 import net.xeoh.plugins.base.annotations.events.Shutdown;
+import net.xeoh.plugins.base.annotations.injections.InjectPlugin;
 
 import org.apache.log4j.Logger;
 
+import at.ac.ait.ubicity.commons.broker.UbicityBroker;
 import at.ac.ait.ubicity.commons.broker.events.ESMetadata;
 import at.ac.ait.ubicity.commons.broker.events.ESMetadata.Action;
 import at.ac.ait.ubicity.commons.broker.events.ESMetadata.Properties;
 import at.ac.ait.ubicity.commons.broker.events.EventEntry;
 import at.ac.ait.ubicity.commons.broker.events.Metadata;
+import at.ac.ait.ubicity.commons.broker.exceptions.UbicityBrokerException;
 import at.ac.ait.ubicity.commons.protocol.Answer;
 import at.ac.ait.ubicity.commons.protocol.Command;
 import at.ac.ait.ubicity.commons.protocol.Control;
 import at.ac.ait.ubicity.commons.protocol.Medium;
 import at.ac.ait.ubicity.commons.protocol.Terms;
 import at.ac.ait.ubicity.commons.util.PropertyLoader;
-import at.ac.ait.ubicity.core.Core;
-import at.ac.ait.ubicity.core.UbicityBrokerException;
 import at.ac.ait.ubicity.ubicity.flickrplugin.FlickrStreamer;
 
 import com.flickr4java.flickr.Flickr;
@@ -60,12 +61,12 @@ import com.google.gson.Gson;
 @PluginImplementation
 public class FlickrStreamerImpl implements FlickrStreamer {
 
+	@InjectPlugin
+	public static UbicityBroker broker;
+
 	private final Medium myMedium = Medium.FLICKR;
 
 	private final Map<String, TermHandler> handlers = new ConcurrentHashMap<String, TermHandler>();
-
-	private Core core;
-
 	private String name;
 
 	private String esIndex;
@@ -85,8 +86,7 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 				FlickrStreamerImpl.class.getResource("/flicker.cfg"));
 		setPluginConfig(config);
 
-		core = Core.getInstance();
-		core.register(this);
+		logger.info(name + " loaded");
 	}
 
 	/**
@@ -212,8 +212,6 @@ final class TermHandler extends Thread {
 	boolean done = false;
 
 	private Flickr flickrClient = null;
-	private final Core core;
-
 	private final FlickrStreamerImpl grapper;
 
 	private static Gson gson = new Gson();
@@ -223,7 +221,6 @@ final class TermHandler extends Thread {
 	TermHandler(FlickrStreamerImpl grapper, Terms _terms) {
 		this.grapper = grapper;
 		this.terms = _terms;
-		this.core = Core.getInstance();
 
 		PropertyLoader config = new PropertyLoader(
 				TermHandler.class.getResource("/flicker.cfg"));
@@ -317,7 +314,7 @@ final class TermHandler extends Thread {
 			EventEntry entry = this.grapper.createEvent(terms.getType(),
 					gson.toJson(json));
 			try {
-				core.publish(entry);
+				FlickrStreamerImpl.broker.publish(entry);
 			} catch (UbicityBrokerException e) {
 				logger.error("UbicityBroker threw exc: " + e.getBrokerMessage());
 			}
