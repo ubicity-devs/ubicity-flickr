@@ -22,7 +22,6 @@ import java.net.URL;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
-import java.util.Random;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
@@ -71,8 +70,6 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 
 	private String esIndex;
 
-	private int uniqueId;
-
 	volatile boolean shutdown = false;
 
 	final static Logger logger = Logger.getLogger(FlickrStreamerImpl.class);
@@ -80,8 +77,6 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 	@Override
 	@Init
 	public void init() {
-		uniqueId = new Random().nextInt();
-
 		PropertyLoader config = new PropertyLoader(
 				FlickrStreamerImpl.class.getResource("/flicker.cfg"));
 		setPluginConfig(config);
@@ -97,21 +92,6 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 	private void setPluginConfig(PropertyLoader config) {
 		this.name = config.getString("plugin.flickr.name");
 		esIndex = config.getString("plugin.flickr.elasticsearch.index");
-	}
-
-	@Override
-	public final int hashCode() {
-		return uniqueId;
-	}
-
-	@Override
-	public final boolean equals(Object o) {
-
-		if (FlickrStreamerImpl.class.isInstance(o)) {
-			FlickrStreamerImpl other = (FlickrStreamerImpl) o;
-			return other.uniqueId == this.uniqueId;
-		}
-		return false;
 	}
 
 	@Override
