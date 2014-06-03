@@ -184,6 +184,11 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 	public void shutdown() {
 		shutdown = true;
 	}
+
+	@Override
+	public boolean isResponsible(Medium med) {
+		return myMedium.equals(med);
+	}
 }
 
 final class TermHandler extends Thread {
