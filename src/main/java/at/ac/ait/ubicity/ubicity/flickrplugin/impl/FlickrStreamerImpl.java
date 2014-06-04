@@ -29,16 +29,12 @@ import java.util.concurrent.ConcurrentHashMap;
 import net.xeoh.plugins.base.annotations.PluginImplementation;
 import net.xeoh.plugins.base.annotations.events.Init;
 import net.xeoh.plugins.base.annotations.events.Shutdown;
-import net.xeoh.plugins.base.annotations.injections.InjectPlugin;
 
 import org.apache.log4j.Logger;
 
-import at.ac.ait.ubicity.commons.broker.UbicityBroker;
-import at.ac.ait.ubicity.commons.broker.events.ESMetadata;
-import at.ac.ait.ubicity.commons.broker.events.ESMetadata.Action;
-import at.ac.ait.ubicity.commons.broker.events.ESMetadata.Properties;
+import at.ac.ait.ubicity.commons.broker.BrokerProducer;
 import at.ac.ait.ubicity.commons.broker.events.EventEntry;
-import at.ac.ait.ubicity.commons.broker.events.Metadata;
+import at.ac.ait.ubicity.commons.broker.events.EventEntry.Property;
 import at.ac.ait.ubicity.commons.broker.exceptions.UbicityBrokerException;
 import at.ac.ait.ubicity.commons.protocol.Answer;
 import at.ac.ait.ubicity.commons.protocol.Command;
@@ -58,10 +54,8 @@ import com.flickr4java.flickr.photos.SearchParameters;
 import com.google.gson.Gson;
 
 @PluginImplementation
-public class FlickrStreamerImpl implements FlickrStreamer {
-
-	@InjectPlugin
-	public static UbicityBroker broker;
+public class FlickrStreamerImpl extends BrokerProducer implements
+		FlickrStreamer {
 
 	private final Medium myMedium = Medium.FLICKR;
 
@@ -79,9 +73,26 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 	public void init() {
 		PropertyLoader config = new PropertyLoader(
 				FlickrStreamerImpl.class.getResource("/flicker.cfg"));
+		setProducerSettings(config);
 		setPluginConfig(config);
 
 		logger.info(name + " loaded");
+	}
+
+	/**
+	 * Sets the Apollo broker settings
+	 * 
+	 * @param config
+	 */
+	private void setProducerSettings(PropertyLoader config) {
+		try {
+			super.init(config.getString("plugin.flickr.broker.user"),
+					config.getString("plugin.flickr.broker.pwd"));
+			setProducer(config.getString("plugin.flickr.broker.dest"));
+
+		} catch (UbicityBrokerException e) {
+			logger.error("During init caught exc.", e);
+		}
 	}
 
 	/**
@@ -168,15 +179,21 @@ public class FlickrStreamerImpl implements FlickrStreamer {
 		return false;
 	}
 
+	/**
+	 * Creates a new EventEntry object.
+	 * 
+	 * @param esType
+	 * @param data
+	 * @return
+	 */
 	EventEntry createEvent(String esType, String data) {
 
-		HashMap<Properties, String> props = new HashMap<ESMetadata.Properties, String>();
-		props.put(Properties.ES_INDEX, this.esIndex);
-		props.put(Properties.ES_TYPE, esType);
-		Metadata meta = new ESMetadata(Action.INDEX, 1, props);
+		HashMap<Property, String> header = new HashMap<Property, String>();
+		header.put(Property.ES_INDEX, this.esIndex);
+		header.put(Property.ES_TYPE, esType);
+		header.put(Property.ID, this.name + "-" + UUID.randomUUID().toString());
 
-		String id = this.name + "-" + UUID.randomUUID().toString();
-		return new EventEntry(id, meta, data);
+		return new EventEntry(header, data);
 	}
 
 	@Override
@@ -197,14 +214,14 @@ final class TermHandler extends Thread {
 	boolean done = false;
 
 	private Flickr flickrClient = null;
-	private final FlickrStreamerImpl grapper;
+	private final FlickrStreamerImpl flickrStream;
 
 	private static Gson gson = new Gson();
 
 	final static Logger logger = Logger.getLogger(TermHandler.class);
 
-	TermHandler(FlickrStreamerImpl grapper, Terms _terms) {
-		this.grapper = grapper;
+	TermHandler(FlickrStreamerImpl flickrStream, Terms _terms) {
+		this.flickrStream = flickrStream;
 		this.terms = _terms;
 
 		PropertyLoader config = new PropertyLoader(
@@ -296,10 +313,10 @@ final class TermHandler extends Thread {
 			Map<String, String> json = new HashMap();
 			json.put("url", u.toString());
 
-			EventEntry entry = this.grapper.createEvent(terms.getType(),
+			EventEntry entry = this.flickrStream.createEvent(terms.getType(),
 					gson.toJson(json));
 			try {
-				FlickrStreamerImpl.broker.publish(entry);
+				flickrStream.publish(entry);
 			} catch (UbicityBrokerException e) {
 				logger.error("UbicityBroker threw exc: " + e.getBrokerMessage());
 			}
