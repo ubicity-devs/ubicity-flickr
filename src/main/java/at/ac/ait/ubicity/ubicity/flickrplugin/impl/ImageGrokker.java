@@ -1,14 +1,15 @@
 package at.ac.ait.ubicity.ubicity.flickrplugin.impl;
 
-import java.io.IOException;
 import java.lang.ref.WeakReference;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.Collection;
 import java.util.HashSet;
-import java.util.Set;
+import java.util.List;
 
 import org.apache.log4j.Logger;
+
+import at.ac.ait.ubicity.ubicity.flickrplugin.dto.FlickrDTO;
 
 /**
  * Tests if the set of URLs is valid and removes invalid ones from the set.
@@ -19,42 +20,45 @@ public final class ImageGrokker {
 
 	private static final Logger logger = Logger.getLogger(ImageGrokker.class);
 
-	private final Set<URL> urls;
+	private final List<FlickrDTO> flickrList;
 
-	public ImageGrokker(Set<URL> _urls) {
-		urls = _urls;
+	public ImageGrokker(List<FlickrDTO> flickrList) {
+		this.flickrList = flickrList;
 	}
 
-	public Set<URL> run() {
-		Collection<URL> removable = new HashSet<URL>();
+	public List<FlickrDTO> run() {
+		Collection<FlickrDTO> removable = new HashSet<FlickrDTO>();
 
-		urls.stream()
+		flickrList
+				.stream()
 				.parallel()
 				.forEach(
-						(_url) -> {
+						(dto) -> {
 							try {
 								WeakReference<HttpURLConnection> conn = new WeakReference<HttpURLConnection>(
-										(HttpURLConnection) _url
-												.openConnection());
+										(HttpURLConnection) new URL(dto
+												.getUrl()).openConnection());
 								conn.get().setInstanceFollowRedirects(false);
 								String redirect = conn.get().getHeaderField(
 										"Location");
 
 								if (redirect != null) {
-									removable.add(_url);
+									removable.add(dto);
 								}
 								conn.clear();
 
-							} catch (IOException ioex) {
+							} catch (Exception ioex) {
 								logger.error(
 										"Exc. caught while checking valid URLs.",
 										ioex);
+								removable.add(dto);
 							}
 						});
-		urls.removeAll(removable);
+		flickrList.removeAll(removable);
 
 		logger.info("Removed " + removable.size() + " entries - returning "
-				+ urls.size() + " entries");
-		return urls;
+				+ flickrList.size() + " entries");
+
+		return flickrList;
 	}
 }

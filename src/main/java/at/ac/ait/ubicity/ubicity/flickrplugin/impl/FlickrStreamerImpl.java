@@ -17,12 +17,10 @@
  */
 package at.ac.ait.ubicity.ubicity.flickrplugin.impl;
 
-import java.net.MalformedURLException;
-import java.net.URL;
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -43,6 +41,7 @@ import at.ac.ait.ubicity.commons.protocol.Medium;
 import at.ac.ait.ubicity.commons.protocol.Terms;
 import at.ac.ait.ubicity.commons.util.PropertyLoader;
 import at.ac.ait.ubicity.ubicity.flickrplugin.FlickrStreamer;
+import at.ac.ait.ubicity.ubicity.flickrplugin.dto.FlickrDTO;
 
 import com.flickr4java.flickr.Flickr;
 import com.flickr4java.flickr.FlickrException;
@@ -51,7 +50,6 @@ import com.flickr4java.flickr.photos.Photo;
 import com.flickr4java.flickr.photos.PhotoList;
 import com.flickr4java.flickr.photos.PhotosInterface;
 import com.flickr4java.flickr.photos.SearchParameters;
-import com.google.gson.Gson;
 
 @PluginImplementation
 public class FlickrStreamerImpl extends BrokerProducer implements
@@ -216,8 +214,6 @@ final class TermHandler extends Thread {
 	private Flickr flickrClient = null;
 	private final FlickrStreamerImpl flickrStream;
 
-	private static Gson gson = new Gson();
-
 	final static Logger logger = Logger.getLogger(TermHandler.class);
 
 	TermHandler(FlickrStreamerImpl flickrStream, Terms _terms) {
@@ -253,7 +249,9 @@ final class TermHandler extends Thread {
 		// execute search with given tags
 
 		long _start = System.currentTimeMillis();
-		final Set<URL> __urls = new HashSet();
+
+		List<FlickrDTO> flickrList = new ArrayList<FlickrDTO>();
+
 		try {
 
 			PhotoList<Photo> photoList = photosInterface.search(searchParams,
@@ -267,16 +265,19 @@ final class TermHandler extends Thread {
 					.parallel()
 					.forEach(
 							(p) -> {
-								try {
-									URL __url = new URL(p.getLargeUrl());
-									__urls.add(__url);
-
-								} catch (MalformedURLException _badURL) {
-									logger.warn("[FLICKR] * * * bad URL: "
-											+ _badURL.toString());
+								if (p.hasGeoData() && p.getGeoData() != null) {
+									flickrList.add(new FlickrDTO(p.getId(), p
+											.getLargeUrl(), p.getTitle(), p
+											.getGeoData().getLongitude(), p
+											.getGeoData().getLatitude(), p
+											.getDateAdded()));
+								} else {
+									flickrList.add(new FlickrDTO(p.getId(), p
+											.getLargeUrl(), p.getTitle(), p
+											.getDateAdded()));
 								}
 							});
-			index(grok(__urls));
+			index(grok(flickrList));
 
 		} catch (FlickrException fe) {
 			done = true;
@@ -307,14 +308,12 @@ final class TermHandler extends Thread {
 		}
 	}
 
-	private void index(final Set<URL> urlList) {
+	private void index(List<FlickrDTO> flickrList) {
 
-		for (URL u : urlList) {
-			Map<String, String> json = new HashMap();
-			json.put("url", u.toString());
+		for (FlickrDTO dto : flickrList) {
 
 			EventEntry entry = this.flickrStream.createEvent(terms.getType(),
-					gson.toJson(json));
+					dto.toJson());
 			try {
 				flickrStream.publish(entry);
 			} catch (UbicityBrokerException e) {
@@ -323,7 +322,7 @@ final class TermHandler extends Thread {
 		}
 	}
 
-	private Set<URL> grok(Set<URL> __urls) {
-		return (new ImageGrokker(__urls)).run();
+	private List<FlickrDTO> grok(List<FlickrDTO> flickrList) {
+		return (new ImageGrokker(flickrList)).run();
 	}
 }
