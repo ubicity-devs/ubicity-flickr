@@ -21,7 +21,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 import net.xeoh.plugins.base.annotations.PluginImplementation;
@@ -184,14 +183,14 @@ public class FlickrStreamerImpl extends BrokerProducer implements
 	 * @param data
 	 * @return
 	 */
-	EventEntry createEvent(String esType, String data) {
+	EventEntry createEvent(String esType, FlickrDTO data) {
 
 		HashMap<Property, String> header = new HashMap<Property, String>();
 		header.put(Property.ES_INDEX, this.esIndex);
 		header.put(Property.ES_TYPE, esType);
-		header.put(Property.ID, this.name + "-" + UUID.randomUUID().toString());
+		header.put(Property.ID, this.name + "-" + data.getId());
 
-		return new EventEntry(header, data);
+		return new EventEntry(header, data.toJson());
 	}
 
 	@Override
@@ -313,7 +312,7 @@ final class TermHandler extends Thread {
 		for (FlickrDTO dto : flickrList) {
 
 			EventEntry entry = this.flickrStream.createEvent(terms.getType(),
-					dto.toJson());
+					dto);
 			try {
 				flickrStream.publish(entry);
 			} catch (UbicityBrokerException e) {

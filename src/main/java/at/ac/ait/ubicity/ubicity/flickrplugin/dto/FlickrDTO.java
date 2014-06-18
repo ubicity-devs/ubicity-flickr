@@ -24,14 +24,14 @@ public class FlickrDTO {
 	@SerializedName("geo_point")
 	private float[] geoPoint;
 
-	@SerializedName("posted_at")
+	@SerializedName("created_at")
 	private String createdAt;
 
 	public FlickrDTO(String id, String url, String title, float longitude,
 			float latitude, Date createdAt) {
 		this(id, url, title, createdAt);
-		this.geoPoint[0] = latitude;
-		this.geoPoint[1] = longitude;
+
+		this.geoPoint = new float[] { latitude, longitude };
 	}
 
 	public FlickrDTO(String id, String url, String title, Date createdAt) {
