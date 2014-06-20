@@ -31,7 +31,7 @@ public class FlickrDTO {
 			float latitude, Date createdAt) {
 		this(id, url, title, createdAt);
 
-		this.geoPoint = new float[] { latitude, longitude };
+		this.geoPoint = new float[] { longitude, latitude };
 	}
 
 	public FlickrDTO(String id, String url, String title, Date createdAt) {
