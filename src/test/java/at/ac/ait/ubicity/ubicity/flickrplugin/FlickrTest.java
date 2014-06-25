@@ -5,7 +5,7 @@ import java.util.Date;
 import org.junit.Ignore;
 import org.junit.Test;
 
-import at.ac.ait.ubicity.ubicity.flickrplugin.dto.FlickrDTO;
+import at.ac.ait.ubicity.contracts.flickr.FlickrDTO;
 
 public class FlickrTest {
 

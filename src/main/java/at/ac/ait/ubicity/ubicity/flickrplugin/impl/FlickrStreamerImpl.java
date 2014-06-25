@@ -39,8 +39,8 @@ import at.ac.ait.ubicity.commons.protocol.Control;
 import at.ac.ait.ubicity.commons.protocol.Medium;
 import at.ac.ait.ubicity.commons.protocol.Terms;
 import at.ac.ait.ubicity.commons.util.PropertyLoader;
+import at.ac.ait.ubicity.contracts.flickr.FlickrDTO;
 import at.ac.ait.ubicity.ubicity.flickrplugin.FlickrStreamer;
-import at.ac.ait.ubicity.ubicity.flickrplugin.dto.FlickrDTO;
 
 import com.flickr4java.flickr.Flickr;
 import com.flickr4java.flickr.FlickrException;

@@ -9,7 +9,7 @@ import java.util.List;
 
 import org.apache.log4j.Logger;
 
-import at.ac.ait.ubicity.ubicity.flickrplugin.dto.FlickrDTO;
+import at.ac.ait.ubicity.contracts.flickr.FlickrDTO;
 
 /**
  * Tests if the set of URLs is valid and removes invalid ones from the set.
