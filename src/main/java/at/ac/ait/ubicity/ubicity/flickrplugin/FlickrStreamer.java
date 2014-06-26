@@ -17,12 +17,12 @@
  */
 package at.ac.ait.ubicity.ubicity.flickrplugin;
 
-import at.ac.ait.ubicity.commons.interfaces.ReverseControllableMediumPlugin;
+import at.ac.ait.ubicity.commons.interfaces.JiTPlugin;
 
 /**
  *
  * @author jan
  */
-public interface FlickrStreamer extends ReverseControllableMediumPlugin {
-    
+public interface FlickrStreamer extends JiTPlugin {
+
 }
