@@ -223,7 +223,6 @@ final class TermHandler extends Thread {
 				TermHandler.class.getResource("/flicker.cfg"));
 		flickrClient = new Flickr(config.getString("plugin.flickr.api.key"),
 				config.getString("plugin.flickr.api.secret"), new REST());
-		Flickr.debugStream = false;
 	}
 
 	@Override

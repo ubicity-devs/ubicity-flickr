@@ -9,8 +9,8 @@ import at.ac.ait.ubicity.contracts.flickr.FlickrDTO;
 
 public class FlickrTest {
 
-	@Ignore
 	@Test
+	@Ignore
 	public void JsonTest() {
 
 		FlickrDTO dto = new FlickrDTO("123", "http://ddd.com", "title", 125f,
