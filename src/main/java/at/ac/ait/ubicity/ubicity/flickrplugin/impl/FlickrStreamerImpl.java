@@ -56,8 +56,6 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 	private PhotosInterface flickrPicClient;
 	ImageGrokker grokker = new ImageGrokker();
 
-	boolean shutdown = false;
-
 	@Override
 	@Init
 	public void init() {
@@ -101,26 +99,12 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 		String data = action.getData().toLowerCase();
 
 		logger.info("Search tags: " + data);
-		searchPhotos(data.split(" "));
-		return new Answer(action, Status.PROCESSED, Status.PROCESSED.name());
+		return new Answer(action, Status.PROCESSED, searchPhotos(data.split(" ")));
 	}
 
 	@Override
 	public String getName() {
 		return this.name;
-	}
-
-	@net.xeoh.plugins.base.annotations.Thread
-	public void run() {
-		while (!shutdown) {
-			try {
-				Thread.sleep(100);
-			} catch (InterruptedException _interrupt) {
-				Thread.interrupted();
-			} catch (Exception | Error e) {
-				logger.fatal("Caught an exception while running : " + e.toString());
-			}
-		}
 	}
 
 	/**
@@ -141,7 +125,6 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 	@Override
 	@Shutdown
 	public void shutdown() {
-		shutdown = true;
 	}
 
 	/**
@@ -149,13 +132,15 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 	 * 
 	 * @param tags
 	 */
-	private void searchPhotos(String[] tags) {
+	private String searchPhotos(String[] tags) {
 
 		SearchParameters searchParams = new SearchParameters();
 		searchParams.setSort(SearchParameters.INTERESTINGNESS_DESC);
 
 		searchParams.setTags(tags);
 		final CopyOnWriteArrayList<FlickrDTO> flickrList = new CopyOnWriteArrayList<FlickrDTO>();
+
+		String status = "";
 
 		try {
 			PhotoList<Photo> photoList = flickrPicClient.search(searchParams, 0, 0);
@@ -181,9 +166,13 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 
 			});
 
+			status = "Indexed " + grokkedList.size() + " flickr images.";
+
 		} catch (FlickrException e1) {
 			logger.error("Fetching photos threw exc: " + e1);
 		}
+
+		return status;
 	}
 
 	/**
