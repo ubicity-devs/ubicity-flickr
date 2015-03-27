@@ -17,11 +17,9 @@
  */
 package at.ac.ait.ubicity.ubicity.flickrplugin.impl;
 
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import net.xeoh.plugins.base.annotations.PluginImplementation;
 import net.xeoh.plugins.base.annotations.events.Init;
@@ -33,14 +31,12 @@ import at.ac.ait.ubicity.commons.broker.BrokerProducer;
 import at.ac.ait.ubicity.commons.broker.events.EventEntry;
 import at.ac.ait.ubicity.commons.broker.events.EventEntry.Property;
 import at.ac.ait.ubicity.commons.broker.exceptions.UbicityBrokerException;
-import at.ac.ait.ubicity.commons.protocol.Answer;
-import at.ac.ait.ubicity.commons.protocol.Command;
-import at.ac.ait.ubicity.commons.protocol.Control;
-import at.ac.ait.ubicity.commons.protocol.Medium;
-import at.ac.ait.ubicity.commons.protocol.Terms;
+import at.ac.ait.ubicity.commons.jit.Action;
+import at.ac.ait.ubicity.commons.jit.Answer;
+import at.ac.ait.ubicity.commons.jit.Answer.Status;
 import at.ac.ait.ubicity.commons.util.PropertyLoader;
-import at.ac.ait.ubicity.contracts.flickr.FlickrDTO;
 import at.ac.ait.ubicity.ubicity.flickrplugin.FlickrStreamer;
+import at.ac.ait.ubicity.ubicity.flickrplugin.dto.FlickrDTO;
 
 import com.flickr4java.flickr.Flickr;
 import com.flickr4java.flickr.FlickrException;
@@ -51,27 +47,26 @@ import com.flickr4java.flickr.photos.PhotosInterface;
 import com.flickr4java.flickr.photos.SearchParameters;
 
 @PluginImplementation
-public class FlickrStreamerImpl extends BrokerProducer implements
-		FlickrStreamer {
+public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer {
 
-	private final Medium myMedium = Medium.FLICKR;
+	private static final Logger logger = Logger.getLogger(FlickrStreamerImpl.class);
 
-	private final Map<String, TermHandler> handlers = new ConcurrentHashMap<String, TermHandler>();
 	private String name;
-
 	private String esIndex;
+	private PhotosInterface flickrPicClient;
+	ImageGrokker grokker = new ImageGrokker();
 
-	volatile boolean shutdown = false;
-
-	final static Logger logger = Logger.getLogger(FlickrStreamerImpl.class);
+	boolean shutdown = false;
 
 	@Override
 	@Init
 	public void init() {
-		PropertyLoader config = new PropertyLoader(
-				FlickrStreamerImpl.class.getResource("/flicker.cfg"));
+		PropertyLoader config = new PropertyLoader(FlickrStreamerImpl.class.getResource("/flicker.cfg"));
 		setProducerSettings(config);
 		setPluginConfig(config);
+
+		Flickr flickrClient = new Flickr(config.getString("plugin.flickr.api.key"), config.getString("plugin.flickr.api.secret"), new REST());
+		flickrPicClient = flickrClient.getPhotosInterface();
 
 		logger.info(name + " loaded");
 	}
@@ -83,8 +78,7 @@ public class FlickrStreamerImpl extends BrokerProducer implements
 	 */
 	private void setProducerSettings(PropertyLoader config) {
 		try {
-			super.init(config.getString("plugin.flickr.broker.user"),
-					config.getString("plugin.flickr.broker.pwd"));
+			super.init(config.getString("plugin.flickr.broker.user"), config.getString("plugin.flickr.broker.pwd"));
 			setProducer(config.getString("plugin.flickr.broker.dest"));
 
 		} catch (UbicityBrokerException e) {
@@ -103,29 +97,12 @@ public class FlickrStreamerImpl extends BrokerProducer implements
 	}
 
 	@Override
-	public Answer execute(Command _command) {
-		logger.info("[Received a Command :: " + _command.toRESTString());
-		// do some sanity checking upon the command
-		if (!_command.getMedia().get().contains(myMedium))
-			return Answer.FAIL;
-		if (null == _command.getTerms() || null == _command.getTerms().get())
-			return Answer.ERROR;
+	public Answer process(Action action) {
+		String data = action.getData().toLowerCase();
 
-		// deal with the case we have a control to execute, and get it out of
-		// the way:
-		if (!(null == _command.getControl()))
-			return doControlOperation(_command) ? Answer.ACK : Answer.FAIL;
-
-		// we have the right Medium in the command, and we have Terms: we can go
-		// down to business
-		Terms __terms = _command.getTerms();
-
-		TermHandler tH = new TermHandler(this, __terms);
-		handlers.put(__terms.getType(), tH);
-		Thread tTH = new Thread(tH);
-		tTH.setPriority(Thread.MAX_PRIORITY);
-		tTH.start();
-		return Answer.ACK;
+		logger.info("Search tags: " + data);
+		searchPhotos(data.split(" "));
+		return new Answer(action, Status.PROCESSED, Status.PROCESSED.name());
 	}
 
 	@Override
@@ -137,43 +114,13 @@ public class FlickrStreamerImpl extends BrokerProducer implements
 	public void run() {
 		while (!shutdown) {
 			try {
-				Thread.sleep(10);
-				for (TermHandler t : handlers.values()) {
-					if (t.done) {
-						t.stop();
-						handlers.remove(t.terms.getType());
-						t = null;
-					}
-				}
+				Thread.sleep(100);
 			} catch (InterruptedException _interrupt) {
 				Thread.interrupted();
 			} catch (Exception | Error e) {
-				logger.fatal("Caught an exception while running : "
-						+ e.toString());
+				logger.fatal("Caught an exception while running : " + e.toString());
 			}
 		}
-	}
-
-	private boolean doControlOperation(Command _command) {
-		// find the TermHandler we need to act upon
-		StringBuilder sb = new StringBuilder();
-
-		_command.getTerms().get().stream().forEach((t) -> {
-			sb.append(t.getValue().toLowerCase());
-		});
-
-		TermHandler tH = handlers.get(sb.toString());
-		if (null == tH)
-			return false;
-		if (_command.getControl().equals(Control.PAUSE))
-			return tH.doPause();
-		if (_command.getControl().equals(Control.STOP))
-			return tH.doStop();
-
-		// if we land here, something has gone pretty wrong
-		logger.warn("could not determine which control to perform, or for which terms the control was meant. Here follows a representation of the Command received : "
-				+ _command.toString());
-		return false;
 	}
 
 	/**
@@ -184,12 +131,10 @@ public class FlickrStreamerImpl extends BrokerProducer implements
 	 * @return
 	 */
 	EventEntry createEvent(String esType, FlickrDTO data) {
-
 		HashMap<Property, String> header = new HashMap<Property, String>();
 		header.put(Property.ES_INDEX, this.esIndex);
 		header.put(Property.ES_TYPE, esType);
 		header.put(Property.ID, this.name + "-" + data.getId());
-
 		return new EventEntry(header, data.toJson());
 	}
 
@@ -199,128 +144,61 @@ public class FlickrStreamerImpl extends BrokerProducer implements
 		shutdown = true;
 	}
 
-	@Override
-	public boolean isResponsible(Medium med) {
-		return myMedium.equals(med);
-	}
-}
+	/**
+	 * Process the search and index functionality.
+	 * 
+	 * @param tags
+	 */
+	private void searchPhotos(String[] tags) {
 
-final class TermHandler extends Thread {
-
-	final Terms terms;
-	boolean done = false;
-
-	private Flickr flickrClient = null;
-	private final FlickrStreamerImpl flickrStream;
-
-	final static Logger logger = Logger.getLogger(TermHandler.class);
-
-	TermHandler(FlickrStreamerImpl flickrStream, Terms _terms) {
-		this.flickrStream = flickrStream;
-		this.terms = _terms;
-
-		PropertyLoader config = new PropertyLoader(
-				TermHandler.class.getResource("/flicker.cfg"));
-		flickrClient = new Flickr(config.getString("plugin.flickr.api.key"),
-				config.getString("plugin.flickr.api.secret"), new REST());
-	}
-
-	@Override
-	public final void run() {
-		// initialize SearchParameter object, which stores the search keyword(s)
 		SearchParameters searchParams = new SearchParameters();
 		searchParams.setSort(SearchParameters.INTERESTINGNESS_DESC);
 
-		// create tag keyword array
-		int termCounter = 0;
-
-		String[] tags = new String[terms.termList.size()];
-
-		terms.termList.stream().forEach((_t) -> {
-			tags[termCounter] = _t.getValue();
-		});
-
 		searchParams.setTags(tags);
-
-		// initialize PhotosInterface object
-		PhotosInterface photosInterface = flickrClient.getPhotosInterface();
-		// execute search with given tags
-
-		long _start = System.currentTimeMillis();
-
-		List<FlickrDTO> flickrList = new ArrayList<FlickrDTO>();
+		final CopyOnWriteArrayList<FlickrDTO> flickrList = new CopyOnWriteArrayList<FlickrDTO>();
 
 		try {
+			PhotoList<Photo> photoList = flickrPicClient.search(searchParams, 0, 0);
 
-			PhotoList<Photo> photoList = photosInterface.search(searchParams,
-					20, 1);
-			logger.info("Fetched " + photoList.size() + " Flickr results in "
-					+ (System.currentTimeMillis() - _start) + " [ms] for "
-					+ terms.getType());
+			photoList.parallelStream().forEach(
+					(p) -> {
+						if (p.hasGeoData() && p.getGeoData() != null) {
+							flickrList.add(new FlickrDTO(p.getId(), p.getLargeUrl(), p.getTitle(), p.getGeoData().getLongitude(), p.getGeoData().getLatitude(),
+									p.getDateAdded()));
+						} else {
+							flickrList.add(new FlickrDTO(p.getId(), p.getLargeUrl(), p.getTitle(), p.getDateAdded()));
+						}
+					});
 
-			photoList
-					.stream()
-					.parallel()
-					.forEach(
-							(p) -> {
-								if (p.hasGeoData() && p.getGeoData() != null) {
-									flickrList.add(new FlickrDTO(p.getId(), p
-											.getLargeUrl(), p.getTitle(), p
-											.getGeoData().getLongitude(), p
-											.getGeoData().getLatitude(), p
-											.getDateAdded()));
-								} else {
-									flickrList.add(new FlickrDTO(p.getId(), p
-											.getLargeUrl(), p.getTitle(), p
-											.getDateAdded()));
-								}
-							});
-			index(grok(flickrList));
+			List<FlickrDTO> grokkedList = grokker.removeDeadLinks(flickrList);
 
-		} catch (FlickrException fe) {
-			done = true;
-			logger.error("Caught flickrException", fe);
-			throw new Error(fe);
-		}
-		done = true;
-		return;
-	}
+			grokkedList.forEach((dto) -> {
+				try {
+					publish(createEvent(buildEsType(tags), dto));
+				} catch (UbicityBrokerException e) {
+					logger.error("UbicityBroker threw exc: " + e.getBrokerMessage());
+				}
 
-	public final boolean doStop() {
-		try {
-			stop();
-			return true;
-		} catch (Exception | Error e) {
-			logger.warn("problem encountered while trying to stop ");
-			return false;
+			});
+
+		} catch (FlickrException e1) {
+			logger.error("Fetching photos threw exc: " + e1);
 		}
 	}
 
-	public final boolean doPause() {
-		try {
-			this.suspend();
-			return true;
-		} catch (Exception | Error e) {
-			logger.warn("problem encountered while trying to pause ");
-			return false;
+	/**
+	 * Builds the ES Type based on the tags.
+	 * 
+	 * @param tags
+	 * @return
+	 */
+	private String buildEsType(String[] tags) {
+		StringBuilder sb = new StringBuilder();
+
+		for (int i = 0; i < tags.length; i++) {
+			sb.append(tags[i]);
 		}
-	}
 
-	private void index(List<FlickrDTO> flickrList) {
-
-		for (FlickrDTO dto : flickrList) {
-
-			EventEntry entry = this.flickrStream.createEvent(terms.getType(),
-					dto);
-			try {
-				flickrStream.publish(entry);
-			} catch (UbicityBrokerException e) {
-				logger.error("UbicityBroker threw exc: " + e.getBrokerMessage());
-			}
-		}
-	}
-
-	private List<FlickrDTO> grok(List<FlickrDTO> flickrList) {
-		return (new ImageGrokker(flickrList)).run();
+		return sb.toString().toLowerCase();
 	}
 }

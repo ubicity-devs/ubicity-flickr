@@ -13,7 +13,7 @@ import com.flickr4java.flickr.photos.PhotoList;
 import com.flickr4java.flickr.photos.PhotosInterface;
 import com.flickr4java.flickr.photos.SearchParameters;
 
-public class FlickrTest1 {
+public class FlickrSSLTest {
 
 	@Test
 	@Ignore
