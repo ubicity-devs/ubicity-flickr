@@ -17,12 +17,8 @@
  */
 package at.ac.ait.ubicity.ubicity.flickrplugin;
 
-import at.ac.ait.ubicity.commons.interfaces.JiTPlugin;
+import at.ac.ait.ubicity.commons.interfaces.JiTConsumerPlugin;
 
-/**
- *
- * @author jan
- */
-public interface FlickrStreamer extends JiTPlugin {
+public interface FlickrStreamer extends JiTConsumerPlugin {
 
 }
