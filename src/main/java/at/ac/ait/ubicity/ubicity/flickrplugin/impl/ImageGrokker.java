@@ -13,8 +13,6 @@ import at.ac.ait.ubicity.ubicity.flickrplugin.dto.FlickrDTO;
 
 /**
  * Tests if the set of URLs is valid and removes invalid ones from the set.
- * 
- * @author jan van oort
  */
 public class ImageGrokker {
 

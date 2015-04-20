@@ -17,6 +17,7 @@
  */
 package at.ac.ait.ubicity.ubicity.flickrplugin.impl;
 
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -30,7 +31,7 @@ import org.apache.log4j.Logger;
 import at.ac.ait.ubicity.commons.broker.BrokerProducer;
 import at.ac.ait.ubicity.commons.broker.events.EventEntry;
 import at.ac.ait.ubicity.commons.broker.events.EventEntry.Property;
-import at.ac.ait.ubicity.commons.broker.exceptions.UbicityBrokerException;
+import at.ac.ait.ubicity.commons.exceptions.UbicityBrokerException;
 import at.ac.ait.ubicity.commons.jit.Action;
 import at.ac.ait.ubicity.commons.jit.Answer;
 import at.ac.ait.ubicity.commons.jit.Answer.Status;
@@ -53,8 +54,10 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 
 	private String name;
 	private String esIndex;
+	private String pluginDest;
+
 	private PhotosInterface flickrPicClient;
-	ImageGrokker grokker = new ImageGrokker();
+	private final ImageGrokker grokker = new ImageGrokker();
 
 	@Override
 	@Init
@@ -77,7 +80,7 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 	private void setProducerSettings(PropertyLoader config) {
 		try {
 			super.init(config.getString("plugin.flickr.broker.user"), config.getString("plugin.flickr.broker.pwd"));
-			setProducer(config.getString("plugin.flickr.broker.dest"));
+			pluginDest = config.getString("plugin.flickr.broker.dest");
 
 		} catch (UbicityBrokerException e) {
 			logger.error("During init caught exc.", e);
@@ -114,17 +117,20 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 	 * @param data
 	 * @return
 	 */
-	EventEntry createEvent(String esType, FlickrDTO data) {
+	private EventEntry createEvent(String esType, FlickrDTO data) {
 		HashMap<Property, String> header = new HashMap<Property, String>();
 		header.put(Property.ES_INDEX, this.esIndex);
 		header.put(Property.ES_TYPE, esType);
 		header.put(Property.ID, this.name + "-" + data.getId());
+		header.put(Property.PLUGIN_CHAIN, EventEntry.formatPluginChain(Arrays.asList(pluginDest)));
+
 		return new EventEntry(header, data.toJson());
 	}
 
 	@Override
 	@Shutdown
 	public void shutdown() {
+		shutdown(pluginDest);
 	}
 
 	/**
