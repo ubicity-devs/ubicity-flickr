@@ -35,6 +35,7 @@ import at.ac.ait.ubicity.commons.exceptions.UbicityBrokerException;
 import at.ac.ait.ubicity.commons.jit.Action;
 import at.ac.ait.ubicity.commons.jit.Answer;
 import at.ac.ait.ubicity.commons.jit.Answer.Status;
+import at.ac.ait.ubicity.commons.util.ESIndexCreator;
 import at.ac.ait.ubicity.commons.util.PropertyLoader;
 import at.ac.ait.ubicity.ubicity.flickrplugin.FlickrStreamer;
 import at.ac.ait.ubicity.ubicity.flickrplugin.dto.FlickrDTO;
@@ -53,7 +54,7 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 	private static final Logger logger = Logger.getLogger(FlickrStreamerImpl.class);
 
 	private String name;
-	private String esIndex;
+	private ESIndexCreator ic;
 	private String pluginDest;
 
 	private PhotosInterface flickrPicClient;
@@ -62,7 +63,7 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 	@Override
 	@Init
 	public void init() {
-		PropertyLoader config = new PropertyLoader(FlickrStreamerImpl.class.getResource("/flicker.cfg"));
+		PropertyLoader config = new PropertyLoader(FlickrStreamerImpl.class.getResource("/flickr.cfg"));
 		setProducerSettings(config);
 		setPluginConfig(config);
 
@@ -79,7 +80,7 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 	 */
 	private void setProducerSettings(PropertyLoader config) {
 		try {
-			super.init(config.getString("plugin.flickr.broker.user"), config.getString("plugin.flickr.broker.pwd"));
+			super.init();
 			pluginDest = config.getString("plugin.flickr.broker.dest");
 
 		} catch (UbicityBrokerException e) {
@@ -94,7 +95,8 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 	 */
 	private void setPluginConfig(PropertyLoader config) {
 		this.name = config.getString("plugin.flickr.name");
-		esIndex = config.getString("plugin.flickr.elasticsearch.index");
+		ic = new ESIndexCreator(config.getString("plugin.flickr.elasticsearch.index"), "", config.getString("plugin.flickr.elasticsearch.pattern"));
+
 	}
 
 	@Override
@@ -119,7 +121,7 @@ public class FlickrStreamerImpl extends BrokerProducer implements FlickrStreamer
 	 */
 	private EventEntry createEvent(String esType, FlickrDTO data) {
 		HashMap<Property, String> header = new HashMap<Property, String>();
-		header.put(Property.ES_INDEX, this.esIndex);
+		header.put(Property.ES_INDEX, ic.getIndex());
 		header.put(Property.ES_TYPE, esType);
 		header.put(Property.ID, this.name + "-" + data.getId());
 		header.put(Property.PLUGIN_CHAIN, EventEntry.formatPluginChain(Arrays.asList(pluginDest)));
